@@ -11,6 +11,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.naive_bayes import GaussianNB
 from sklearn.linear_model import SGDClassifier
+from sklearn import svm
+from sklearn import model_selection
 
 class Word2vecBaseline:
     def set_jieba(self):
@@ -19,14 +21,14 @@ class Word2vecBaseline:
 
     def set_stopwords(self):
         stopwords_path = '../data/stop_words.txt'
-        
+
         stopwords = set()
         with open(stopwords_path, 'r', encoding='utf-8') as f:
             for line in f:
                 stopwords.add(line.strip('\n'))
 
         self.stopwords = stopwords
-    
+
     def load_word2vec_models(self):
         baseball_model_path = '../data/word2vec_models/baseball-250.model.bin'
         movie_model_path = '../data/word2vec_models/movie-250.model.bin'
@@ -38,7 +40,7 @@ class Word2vecBaseline:
 
     def load_posts(self, path, labeled_count):
         with open(path) as json_data:
-                data = json.load(json_data)    
+                data = json.load(json_data)
 
         return data[:labeled_count]
 
@@ -210,7 +212,7 @@ class Word2vecBaseline:
             sentence_vec = self.sentence2vec(content_segmented, word2vec_model)
             if len(sentence_vec) < 1:
                 continue
-            
+
             # append to the corpus
             corpus.append(sentence_vec)
 
@@ -240,11 +242,27 @@ class Word2vecBaseline:
         self.lol_train_corpus, self.lol_train_labels = self.build_corpus(self.lol_train_comments, self.lol_score_thresh, self.lol_model)
         self.lol_test_corpus, self.lol_test_labels = self.build_corpus(self.lol_test_comments, self.lol_score_thresh, self.lol_model)
 
-    def train(self, train_corpus, train_labels, type='bayes'):
+    def svc_param_selection(self, X, y, nfolds=10):
+        Nus = [0.25, 0.5, 0.75, 0.9]
+        gammas = [0.000005, 0.00001, 0.0001, 0.001]
+        param_grid = {'nu': Nus, 'gamma' : gammas}
+
+        grid_search = model_selection.GridSearchCV(svm.NuSVC(), param_grid, cv=nfolds)
+        grid_search.fit(X, y)
+        print('\n', 'svc_param_selection:', grid_search.best_params_, '\n')
+        return grid_search.best_params_
+
+    def train(self, train_corpus, train_labels, type='bayes', nu=0.5, gamma=0.001):
         if type == 'bayes':
             classifier = GaussianNB()
         elif type == 'svm':
-            classifier = SGDClassifier(loss='hinge', penalty='l2', alpha=1e-3, n_iter=5, random_state=42)
+            #best_params = self.svc_param_selection(train_corpus, train_labels)
+
+            #classifier = SGDClassifier(loss='hinge', penalty='l2', alpha=1e-3, n_iter=5, random_state=42)
+            #classifier = svm.SVC()
+            classifier = svm.NuSVC(nu=nu, gamma=gamma)
+            #classifier = svm.NuSVC(nu=best_params['nu'], gamma=best_params['gamma'])
+            #classifier = svm.LinearSVC()
 
         classifier.fit(train_corpus, train_labels)
         return classifier
@@ -294,11 +312,11 @@ class Word2vecBaseline:
 
         ### svm
         # baseball
-        self.baseball_svm_classifier = self.train(self.baseball_train_corpus, self.baseball_train_labels, type='svm')
+        self.baseball_svm_classifier = self.train(self.baseball_train_corpus, self.baseball_train_labels, type='svm', nu=0.75, gamma=0.000005)
         # movie
-        self.movie_svm_classifier = self.train(self.movie_train_corpus, self.movie_train_labels, type='svm')
+        self.movie_svm_classifier = self.train(self.movie_train_corpus, self.movie_train_labels, type='svm', nu=0.5, gamma=0.00001)
         # lol
-        self.lol_svm_classifier = self.train(self.lol_train_corpus, self.lol_train_labels, type='svm')
+        self.lol_svm_classifier = self.train(self.lol_train_corpus, self.lol_train_labels, type='svm', nu=0.5, gamma=0.001)
 
     def test_all(self):
         print('\n', 'test:')
